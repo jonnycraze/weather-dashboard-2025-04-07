@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Dispatch, SetStateAction } from 'react';
 import { Link } from 'react-router-dom';
 import { WeatherService } from '../services/WeatherService';
 import { CacheService } from '../services/CacheService';
@@ -6,6 +6,7 @@ import { MetricsService } from '../services/MetricsService';
 import { WeatherApiClient } from '../lib/WeatherApiClient';
 import type { WeatherData } from '../models/WeatherData';
 import { POPULAR_CITIES } from '../config/cities';
+import AlertBanner from '~/components/AlertBanner';
 
 // Initialize services
 const cacheService = new CacheService();
@@ -23,6 +24,7 @@ function ErrorDisplay({ message }: { message: string }) {
   );
 }
 
+{/* NOTE: This should be abstracted into a seperate component */}
 function WarningDisplay({ message }: { message: string }) {
   return (
     <div className='mb-4'>
@@ -36,9 +38,15 @@ function WarningDisplay({ message }: { message: string }) {
   );
 }
 
-function WeatherCard({ data }: { data: WeatherData }) {
+{/* NOTE: This should be abstracted into a seperate component */}
+{/* WARNING: This setter prop isn't ideal, considerations could be elevating the alert content to be managed in Context or similar */}
+function WeatherCard({ data, setAlert }: { data: WeatherData, setAlert?: (value:string) => void }) {
+  const set = () => {
+    if (setAlert) setAlert(`Weather conditions in ${data.city}: ${data.conditions.main}`);
+  }
+
   return (
-    <div className='bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow'>
+    <div className='bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow' onClick={set}>
       <h2 className='text-xl font-semibold mb-4'>{data.city}</h2>
       <div className='space-y-2'>
         <p className='text-lg'>
@@ -58,6 +66,7 @@ function WeatherCard({ data }: { data: WeatherData }) {
   );
 }
 
+{/* NOTE: This should be abstracted into a seperate component */}
 function WeatherGrid({ weather }: { weather: WeatherData[] }) {
   return (
     <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
@@ -79,7 +88,13 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [hottestCity, setHottestCity] = useState<WeatherData>();
+  const [coolestCity, setCoolestCity] = useState<WeatherData>();
+  const [alertValue, setAlertValue] = useState<string>('');
+  const [showAlert, setShowAlert] = useState<boolean>(false);
+
   useEffect(() => {
+    {/* NOTE: This would be better served as a custom hook for reusability */}
     async function fetchWeather() {
       try {
         const weatherPromises = POPULAR_CITIES.map(city => weatherService.getWeatherData(city));
@@ -95,6 +110,7 @@ export default function Home() {
           setError('Unable to fetch weather data for any cities. Please try again later.');
           setWeather([]);
         } else {
+          {/* NOTE: Depending on the broader application needs, this data could be set in a global state such as Context, Redux, etc. */}
           setWeather(weatherData);
           if (weatherData.length < POPULAR_CITIES.length) {
             setError("Some cities' weather data could not be loaded.");
@@ -113,7 +129,23 @@ export default function Home() {
     fetchWeather();
   }, []);
 
+
+  useEffect(() => {
+    if (weather?.length) {
+      const highest = weather.reduce((max, item) => 
+        item.temperature.fahrenheit > max.temperature.fahrenheit ? item : max
+      );
+      const lowest = weather.reduce((min, item) => 
+        item.temperature.fahrenheit < min.temperature.fahrenheit ? item : min
+      );
+
+      setCoolestCity(lowest);
+      setHottestCity(highest);
+    }
+  }, [weather]);
+
   if (loading) {
+    {/* NOTE: This should be abstracted into a seperate component */}
     return (
       <div className='flex justify-center items-center min-h-screen'>
         <div className='animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900'></div>
@@ -121,9 +153,32 @@ export default function Home() {
     );
   }
 
+  const setAlertAndShow = (v:string) => {
+    setAlertValue(v)
+    setShowAlert(true);
+  }
+
   return (
     <div>
       {error && <ErrorDisplay message={error} />}
+
+      <AlertBanner value={alertValue} visible={showAlert} setVisible={setShowAlert} />
+
+      {/* NOTE: These should be abstracted into a seperate component, it would also house their localized state, keeping the home component cleaner */}
+      {hottestCity && 
+        <div style={{marginBottom: 16}}>
+          <h2>Hottest City:</h2>
+          <WeatherCard data={hottestCity} setAlert={setAlertAndShow} />
+        </div>
+      }
+      {coolestCity && 
+        <div style={{marginBottom: 16}}>
+          <h2>Coldest City:</h2>
+          <WeatherCard data={coolestCity} setAlert={setAlertAndShow} />
+        </div>
+      }
+
+
       {weather.length > 0 && <WeatherGrid weather={weather} />}
     </div>
   );
